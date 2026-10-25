@@ -1,0 +1,35 @@
+# PrepPilot - local development database only.
+#
+#   docker compose -f docker-compose.dev.yml up -d
+#   DATABASE_URL=postgres://preppilot:preppilot@localhost:5434/preppilot
+#
+# Host port 5434 avoids clashing with a locally installed Postgres on 5432.
+# Uses its own project name so it never collides with the production stack
+# in docker-compose.yml.
+
+name: preppilot-dev
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: preppilot-dev-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: preppilot
+      POSTGRES_USER: preppilot
+      POSTGRES_PASSWORD: preppilot
+    ports:
+      # Override the host port if 5434 is taken: DEV_DB_PORT=5435 docker compose ...
+      # (and update DATABASE_URL in apps/api/.env to match).
+      - "${DEV_DB_PORT:-5434}:5432"
+    volumes:
+      - pgdata-dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U preppilot -d preppilot"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  pgdata-dev:

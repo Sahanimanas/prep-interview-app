@@ -1,0 +1,25 @@
+{
+  "name": "preppilot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AI-powered interview preparation platform (API, web, mobile)",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:api": "npm run dev -w @preppilot/api",
+    "dev:worker": "npm run worker:dev -w @preppilot/api",
+    "dev:web": "npm run dev -w @preppilot/web",
+    "dev:mobile": "npm run start -w @preppilot/mobile",
+    "db:migrate": "npm run db:migrate -w @preppilot/api",
+    "build:api": "npm run build -w @preppilot/api",
+    "build:web": "npm run build -w @preppilot/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "db:seed": "npm run db:seed -w @preppilot/api"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}

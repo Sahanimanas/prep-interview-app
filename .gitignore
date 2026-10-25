@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.next/
+.expo/
+.env
+.env.local
+*.log
+coverage/
+.DS_Store
+apps/mobile/ios/
+apps/mobile/android/

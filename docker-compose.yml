@@ -1,0 +1,125 @@
+# PrepPilot - production-style stack (Postgres + migrations + API + worker + web)
+#
+#   cp .env.example .env      # then fill in the secrets
+#   docker compose up -d --build
+#
+# Values are read from ./.env (Compose variable interpolation). Required secrets
+# use ${VAR:?...} so Compose refuses to start without them (older Compose
+# versions, e.g. v2.17, report this as "invalid interpolation format for ...").
+# Never commit .env.
+
+name: preppilot
+
+x-api-image: &api-image
+  image: ${API_IMAGE:-preppilot-api:latest}
+  build:
+    context: .
+    dockerfile: apps/api/Dockerfile
+
+# Shared environment for every container that runs the API image.
+x-api-env: &api-env
+  NODE_ENV: production
+  PORT: "4000"
+  DATABASE_URL: postgres://${POSTGRES_USER:-preppilot}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-preppilot}
+  DATABASE_SSL: ${DATABASE_SSL:-false}
+  DATABASE_POOL_MAX: ${DATABASE_POOL_MAX:-10}
+  JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?set JWT_ACCESS_SECRET in .env - at least 32 chars}
+  ACCESS_TOKEN_TTL_SECONDS: ${ACCESS_TOKEN_TTL_SECONDS:-900}
+  REFRESH_TOKEN_TTL_DAYS: ${REFRESH_TOKEN_TTL_DAYS:-30}
+  ENCRYPTION_KEY: ${ENCRYPTION_KEY:?set ENCRYPTION_KEY in .env - 64 hex chars}
+  CORS_ORIGINS: ${CORS_ORIGINS:-}
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  AI_MODEL: ${AI_MODEL:-claude-opus-5-5}
+  AI_MOCK: ${AI_MOCK:-false}
+  WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-2}
+  # Migrations run in the dedicated `migrate` service below.
+  MIGRATE_ON_START: "false"
+  TRUST_PROXY: ${TRUST_PROXY:-1}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  AI_RATE_LIMIT_PER_HOUR: ${AI_RATE_LIMIT_PER_HOUR:-60}
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-preppilot}
+      POSTGRES_USER: ${POSTGRES_USER:-preppilot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    # Not published to the host on purpose; only reachable on the compose network.
+
+  migrate:
+    <<: *api-image
+    command: ["node", "dist/migrate.js"]
+    environment:
+      <<: *api-env
+      RUN_WORKER: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    healthcheck:
+      disable: true
+
+  api:
+    <<: *api-image
+    command: ["node", "dist/server.js"]
+    environment:
+      <<: *api-env
+      # The dedicated `worker` service processes AI jobs.
+      RUN_WORKER: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - "${API_PORT:-4000}:4000"
+    restart: unless-stopped
+    # HEALTHCHECK (GET /healthz) comes from the image.
+
+  worker:
+    <<: *api-image
+    command: ["node", "dist/worker.js"]
+    environment:
+      <<: *api-env
+      RUN_WORKER: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    # The worker has no HTTP server, so the image's /healthz check does not apply.
+    healthcheck:
+      disable: true
+
+  web:
+    image: ${WEB_IMAGE:-preppilot-web:latest}
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        # Baked into the Next.js rewrites at build time (see apps/web/Dockerfile).
+        API_URL: ${WEB_API_URL:-http://api:4000}
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      API_URL: ${WEB_API_URL:-http://api:4000}
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    restart: unless-stopped
+
+volumes:
+  pgdata:

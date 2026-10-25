@@ -1,0 +1,32 @@
+# Build context is the monorepo root (see apps/*/Dockerfile).
+
+# Dependencies & build output (rebuilt inside the image)
+**/node_modules
+**/.next
+**/dist
+**/.expo
+**/.turbo
+**/coverage
+**/*.tsbuildinfo
+
+# Mobile app is built with EAS, not Docker - but keep its package.json so
+# `npm ci` can validate the workspace lockfile.
+apps/mobile/*
+!apps/mobile/package.json
+
+# VCS, editor, OS noise
+.git
+.github
+.vscode
+.idea
+**/.DS_Store
+**/*.log
+
+# Secrets / local env - never bake into images
+**/.env
+**/.env.*
+
+# Docker files themselves
+**/Dockerfile
+**/.dockerignore
+docker-compose*.yml
